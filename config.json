@@ -1,0 +1,6 @@
+{
+    "paths": {
+        "hashcat": "D:/soft/Pass/hashcat-utils-1.9/hashcat.exe",
+        "john_dir": "D:/soft/Pass/john-bleeding-jumbo/run"
+    }
+}
