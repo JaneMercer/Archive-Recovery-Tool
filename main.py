@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import filedialog
-from gui.app_window import ApplicationWindow
+from gui.main_window import MainWindow
 from config.config_manager import ConfigManager
 from utils.path_validator import PathValidator
 import os
@@ -27,10 +27,10 @@ def main():
     # Create root window
     root = tk.Tk()
     root.title("Archive Password Recovery")
-    root.geometry("650x450")
+    root.geometry("750x600")
 
-    # Initialize the main application window
-    app = ApplicationWindow(root, config_manager, path_validator)
+    # Initialize the main window
+    app = MainWindow(root, config_manager, path_validator)
 
     # Start the application
     root.mainloop()

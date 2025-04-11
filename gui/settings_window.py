@@ -4,14 +4,14 @@ from tkinter import ttk
 import os
 
 
-class ApplicationWindow:
-    """Main application window class"""
+class SettingsWindow:
+    """Settings window for path configuration"""
 
     def __init__(self, root, config_manager, path_validator):
-        """Initialize the application window
+        """Initialize the settings window
 
         Args:
-            root (tk.Tk): The root Tkinter window
+            root (tk.Tk or tk.Toplevel): The root window
             config_manager (ConfigManager): The configuration manager
             path_validator (PathValidator): The path validator
         """
@@ -159,3 +159,7 @@ class ApplicationWindow:
         self.config_manager.save_config()
 
         messagebox.showinfo("Success", "Configuration saved successfully")
+
+        # Close the window if it's not the main window
+        if self.root.winfo_class() == "Toplevel":
+            self.root.destroy()
