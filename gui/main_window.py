@@ -4,6 +4,7 @@ from tkinter import ttk
 import os
 import shutil
 from gui.settings_window import SettingsWindow
+from handlers.archive_handler import ArchiveHandler  # adjust if module path is different
 
 
 class MainWindow:
@@ -216,6 +217,12 @@ class MainWindow:
 
         ttk.Button(
             button_frame,
+            text="Validate Archive",
+            command=self._validate_archive
+        ).pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(
+            button_frame,
             text="Extract Hash Only",
             command=self._extract_hash
         ).pack(side=tk.LEFT, padx=5)
@@ -293,15 +300,17 @@ class MainWindow:
                 archive_dir = os.path.dirname(filename)
                 self.output_path_var.set(archive_dir)
 
-            # Auto-detect archive type
-            if self.archive_type_var.get() == "auto":
-                lower_filename = filename.lower()
-                if lower_filename.endswith(".rar"):
-                    self.archive_type_var.set("rar")
-                elif lower_filename.endswith(".zip"):
-                    self.archive_type_var.set("zip")
-                elif lower_filename.endswith(".7z"):
-                    self.archive_type_var.set("7z")
+            # Detect extension
+            ext = os.path.splitext(filename)[1].lower()
+            ext_to_type = {
+                '.rar': 'rar',
+                '.zip': 'zip',
+                '.7z': '7z'
+            }
+
+            detected_type = ext_to_type.get(ext)
+            if detected_type:
+                self.archive_type_var.set(detected_type)
 
     def _browse_wordlist(self):
         """Open file dialog to browse for wordlist file"""
@@ -349,6 +358,23 @@ class MainWindow:
             self.max_length_spin.config(state="disabled")
             for radio in self.charset_radios:
                 radio.config(state="disabled")
+
+    def _validate_archive(self):
+        """Validate if the selected archive is password protected"""
+
+        path = self.archive_path_var.get()
+        if not path:
+            messagebox.showwarning("No File", "Please select an archive file first.")
+            return
+
+        selected_type = self.archive_type_var.get()
+        handler = ArchiveHandler(filepath=path, archive_type=selected_type)
+
+        valid, message = handler.validate()
+        if valid:
+            messagebox.showinfo("Validation Result", message)
+        else:
+            messagebox.showwarning("Validation Result", message)
 
     def _extract_hash(self):
         """Extract hash from the archive without cracking"""
