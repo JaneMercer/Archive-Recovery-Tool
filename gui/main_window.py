@@ -1,8 +1,8 @@
+import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from tkinter import ttk
 import os
-import shutil
 from gui.settings_window import SettingsWindow
 from handlers.archive_handler import ArchiveHandler  # adjust if module path is different
 
@@ -35,6 +35,15 @@ class MainWindow:
         self.min_length_var = tk.IntVar(value=1)
         self.max_length_var = tk.IntVar(value=8)
         self.charset_var = tk.StringVar(value="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
+        # Define predefined charsets for later use
+        self.predefined_charsets = [
+            ("a-z", "abcdefghijklmnopqrstuvwxyz"),
+            ("A-Z", "ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+            ("0-9", "0123456789"),
+            ("a-z,0-9", "abcdefghijklmnopqrstuvwxyz0123456789"),
+            ("All", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+[]{}|;:,.<>?/\\\"'`~")
+        ]
 
         # Initialize UI
         self._init_ui()
@@ -152,7 +161,8 @@ class MainWindow:
             from_=1,
             to=12,
             width=5,
-            textvariable=self.min_length_var
+            textvariable=self.min_length_var,
+            command=self._validate_length_inputs
         )
         self.min_length_spin.grid(row=0, column=1, padx=5, pady=5)
 
@@ -162,7 +172,8 @@ class MainWindow:
             from_=1,
             to=12,
             width=5,
-            textvariable=self.max_length_var
+            textvariable=self.max_length_var,
+            command=self._validate_length_inputs
         )
         self.max_length_spin.grid(row=0, column=3, padx=5, pady=5)
 
@@ -173,6 +184,7 @@ class MainWindow:
 
         # Store radio buttons in a list for later access
         self.charset_radios = []
+        self.charset_var_radio = tk.StringVar(value="all")  # To track which radio is selected
 
         predefined_charsets = [
             ("a-z", "abcdefghijklmnopqrstuvwxyz"),
@@ -186,6 +198,8 @@ class MainWindow:
             radio = ttk.Radiobutton(
                 charset_frame,
                 text=text,
+                variable=self.charset_var_radio,
+                value=text.lower(),
                 command=lambda v=value: self.charset_var.set(v)
             )
             radio.grid(row=0, column=i, padx=5)
@@ -227,11 +241,12 @@ class MainWindow:
             command=self._extract_hash
         ).pack(side=tk.LEFT, padx=5)
 
-        ttk.Button(
+        self.recovery_button = ttk.Button(
             button_frame,
             text="Start Recovery",
             command=self._start_recovery
-        ).pack(side=tk.LEFT, padx=5)
+        )
+        self.recovery_button.pack(side=tk.LEFT, padx=5)
 
         # Status bar
         status_frame = ttk.Frame(main_frame)
@@ -245,6 +260,14 @@ class MainWindow:
         )
         self.status_label.pack(fill=tk.X)
 
+        # Progress bar
+        self.progress_bar = ttk.Progressbar(
+            status_frame,
+            orient=tk.HORIZONTAL,
+            mode='indeterminate',
+            length=100
+        )
+
         # Configure grid weights
         main_frame.columnconfigure(1, weight=1)
 
@@ -252,7 +275,7 @@ class MainWindow:
         self._toggle_attack_method()
 
         # Set default wordlist if hashcat is configured
-        if self.hashcat_path:
+        if self.hashcat_path and os.path.exists(self.hashcat_path):
             hashcat_dir = os.path.dirname(self.hashcat_path)
             example_dict = os.path.join(hashcat_dir, "example0.dict")
             if os.path.exists(example_dict):
@@ -359,22 +382,114 @@ class MainWindow:
             for radio in self.charset_radios:
                 radio.config(state="disabled")
 
+    def _validate_length_inputs(self):
+        """Validate min/max length inputs"""
+        try:
+            min_val = int(self.min_length_var.get())
+            max_val = int(self.max_length_var.get())
+
+            # Ensure min doesn't exceed max
+            if min_val > max_val:
+                self.min_length_var.set(max_val)
+
+            # Ensure both are within reasonable bounds
+            if min_val < 1:
+                self.min_length_var.set(1)
+            if max_val > 12:  # Arbitrary upper limit to prevent excessive load
+                self.max_length_var.set(12)
+
+        except ValueError:
+            # Reset to default values if conversion fails
+            self.min_length_var.set(1)
+            self.max_length_var.set(8)
+
     def _validate_archive(self):
         """Validate if the selected archive is password protected"""
-
         path = self.archive_path_var.get()
         if not path:
             messagebox.showwarning("No File", "Please select an archive file first.")
             return
 
+        # Check if file exists
+        if not os.path.exists(path):
+            messagebox.showerror("File Error", "The selected file does not exist.")
+            return
+
+        # Show progress indicator
+        self.status_label.config(text="Validating archive...")
+        self.progress_bar.pack(fill=tk.X, pady=(5, 0))
+        self.progress_bar.start()
+        self.recovery_button.config(state="disabled")
+
+        # Run validation in a separate thread to avoid freezing the UI
+        threading.Thread(
+            target=self._run_validation,
+            args=(path,),
+            daemon=True
+        ).start()
+
+    def _run_validation(self, path):
+        """Run validation in a separate thread"""
         selected_type = self.archive_type_var.get()
         handler = ArchiveHandler(filepath=path, archive_type=selected_type)
 
         valid, message = handler.validate()
+
+        # Schedule UI updates on the main thread
+        self.root.after(0, lambda: self._validation_complete(valid, message))
+
+    def _validation_complete(self, valid, message):
+        """Update UI after validation completes"""
+        # Hide progress indicator
+        self.progress_bar.stop()
+        self.progress_bar.pack_forget()
+        self.recovery_button.config(state="normal")
+        self.status_label.config(text="Ready")
+
+        # Show result
         if valid:
             messagebox.showinfo("Validation Result", message)
         else:
             messagebox.showwarning("Validation Result", message)
+
+    def _validate_inputs(self) -> bool:
+        """Validate user inputs before starting recovery"""
+        # Check archive path
+        archive_path = self.archive_path_var.get()
+        if not archive_path or not os.path.isfile(archive_path):
+            messagebox.showerror("Input Error", "Please select a valid archive file.")
+            return False
+
+        # Check wordlist path if in dictionary mode
+        if not self.brute_force_var.get():
+            wordlist_path = self.wordlist_path_var.get()
+            if not wordlist_path or not os.path.isfile(wordlist_path):
+                messagebox.showerror("Input Error", "Please select a valid wordlist file.")
+                return False
+
+        # Check output path
+        output_path = self.output_path_var.get()
+        if not output_path or not os.path.isdir(output_path):
+            messagebox.showerror("Input Error", "Please select a valid output directory.")
+            return False
+
+        # Verify brute force parameters
+        if self.brute_force_var.get():
+            min_length = self.min_length_var.get()
+            max_length = self.max_length_var.get()
+
+            if min_length > max_length:
+                messagebox.showerror("Input Error", "Minimum length cannot be greater than maximum length.")
+                return False
+
+            if max_length > 12:  # Arbitrary limit to prevent excessive computation
+                if not messagebox.askyesno(
+                        "Warning",
+                        "Using a maximum length above 12 can lead to very long processing times. Continue anyway?"
+                ):
+                    return False
+
+        return True
 
     def _extract_hash(self):
         """Extract hash from the archive without cracking"""

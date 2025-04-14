@@ -1,36 +1,67 @@
 import os
 import zipfile
+from typing import Optional
+
 import rarfile
-import py7zr  # needs `pip install py7zr`
+import py7zr
+
 
 class ArchiveHandler:
     SUPPORTED_TYPES = ['rar', 'zip', '7z']
 
+    # File signatures for better detection
+    FILE_SIGNATURES = {
+        b'PK\x03\x04': 'zip',
+        b'Rar!\x1a\x07': 'rar',
+        b'7z\xbc\xaf\x27\x1c': '7z'
+    }
+
     def __init__(self, filepath=None, archive_type='auto'):
         self.filepath = filepath
         self.archive_type = archive_type
+        self._detected_type = None
 
         if self.archive_type == 'auto':
-            self.archive_type = self.detect_type()
+            self._detected_type = self.detect_type()
+            self.archive_type = self._detected_type or 'unknown'
 
-    def detect_type(self):
-        """Auto-detect based on file extension"""
+    def detect_type(self) -> Optional[str]:
+        """Detect archive type using file signature and extension"""
+        if not self.filepath or not os.path.isfile(self.filepath):
+            return None
+
+        # Try signature detection first
+        try:
+            with open(self.filepath, 'rb') as f:
+                file_start = f.read(16)  # Read enough bytes for signatures
+
+                for signature, archive_type in self.FILE_SIGNATURES.items():
+                    if file_start.startswith(signature):
+                        return archive_type
+        except (IOError, PermissionError) as e:
+            # Handle file access errors
+            print(f"Error reading file: {e}")
+            return None
+
+        # Fall back to extension
         ext = os.path.splitext(self.filepath)[1].lower().replace('.', '')
         return ext if ext in self.SUPPORTED_TYPES else None
 
     def validate(self):
-        """Dispatch to the correct validator"""
+        """Validate if file exists and is password protected"""
         if not self.filepath or not os.path.isfile(self.filepath):
             return False, "No file selected or file does not exist."
 
-        if self.archive_type == 'rar':
-            return self._validate_rar()
-        elif self.archive_type == 'zip':
-            return self._validate_zip()
-        elif self.archive_type == '7z':
-            return self._validate_7z()
-        else:
-            return False, "Unsupported or unknown archive type."
+        if self.archive_type not in self.SUPPORTED_TYPES:
+            return False, f"Unsupported archive type: {self.archive_type}"
+
+        try:
+            validator_method = getattr(self, f"_validate_{self.archive_type}")
+            return validator_method()
+        except AttributeError:
+            return False, f"Validation for {self.archive_type} not implemented."
+        except Exception as e:
+            return False, f"Unexpected error during validation: {str(e)}"
 
     def _validate_rar(self):
         try:
@@ -63,5 +94,7 @@ class ArchiveHandler:
                     return True, "This 7Z archive is password protected."
                 else:
                     return False, "This 7Z archive is NOT password protected."
+        except py7zr.Bad7zFile:
+            return False, "Not a valid 7Z file."
         except Exception as e:
             return False, f"Error reading 7Z file: {e}"
