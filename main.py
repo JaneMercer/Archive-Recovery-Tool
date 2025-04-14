@@ -5,18 +5,8 @@ from config.config_manager import ConfigManager
 from utils.path_validator import PathValidator
 import os
 
-
-def ensure_directories_exist():
-    """Ensure that all required directories exist"""
-    directories = ['gui', 'config', 'utils']
-    for directory in directories:
-        os.makedirs(directory, exist_ok=True)
-
-
 def main():
     """Main entry point for the application"""
-    # Ensure all directories exist
-    ensure_directories_exist()
 
     # Initialize config manager
     config_manager = ConfigManager()
